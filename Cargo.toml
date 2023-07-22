@@ -1,6 +1,6 @@
 [package]
 name = "reqwest-maybe-middleware"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 authors = ["Protryon <max.bruce12@gmail.com>"]
 license = "Apache-2.0 OR MIT"

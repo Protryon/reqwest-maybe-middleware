@@ -12,7 +12,7 @@ pub use anyhow::Error as MiddlewareError;
 #[cfg(feature = "middleware")]
 pub use reqwest_middleware::ClientWithMiddleware as MiddlewareClient;
 #[cfg(feature = "middleware")]
-use task_local_extensions::Extensions;
+pub use task_local_extensions::Extensions;
 
 /// Wrapper over reqwest::Client or reqwest_middleware::ClientWithMiddleware
 #[derive(Clone, Debug)]
