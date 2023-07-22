@@ -1,0 +1,17 @@
+[package]
+name = "reqwest-maybe-middleware"
+version = "0.1.0"
+edition = "2021"
+authors = ["Protryon <max.bruce12@gmail.com>"]
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/Protryon/reqwest-maybe-middleware"
+description = "Wrapper over reqwest and reqwest-middleware to provide compatibility for either"
+keywords = [ "reqwest", "http", "middleware" ]
+
+[dependencies]
+reqwest = { version = "0.11.4", features = ["json", "multipart"] }
+serde = "1.0"
+# implicitly turns on multipart/json in reqwest, so no point in avoiding it for now
+reqwest-middleware = "0.2.2"
+http = "0.2"
+task-local-extensions = "0.1.4"
