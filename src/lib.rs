@@ -1,16 +1,22 @@
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+#[cfg(feature = "multipart")]
 use reqwest::multipart::Form;
 use reqwest::{Body, Client as VanillaClient, IntoUrl, Method, Request, Response};
-pub use reqwest_middleware::{ClientWithMiddleware as MiddlewareClient, Result};
 use serde::Serialize;
 use std::convert::TryFrom;
 use std::fmt::Display;
+use thiserror::Error;
+
+#[cfg(feature = "middleware")]
+pub use reqwest_middleware::ClientWithMiddleware as MiddlewareClient;
+#[cfg(feature = "middleware")]
 use task_local_extensions::Extensions;
 
 /// Wrapper over reqwest::Client or reqwest_middleware::ClientWithMiddleware
 #[derive(Clone, Debug)]
 pub enum Client {
     Vanilla(VanillaClient),
+    #[cfg(feature = "middleware")]
     Middleware(MiddlewareClient),
 }
 
@@ -20,9 +26,31 @@ impl From<VanillaClient> for Client {
     }
 }
 
+#[cfg(feature = "middleware")]
 impl From<MiddlewareClient> for Client {
     fn from(value: MiddlewareClient) -> Self {
         Client::Middleware(value)
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum Error {
+    /// There was an error running some middleware
+    #[cfg(feature = "middleware")]
+    #[error("Middleware error: {0}")]
+    Middleware(#[from] anyhow::Error),
+    /// Error from the underlying reqwest client
+    #[error("Request error: {0}")]
+    Reqwest(#[from] reqwest::Error),
+}
+
+#[cfg(feature = "middleware")]
+impl From<reqwest_middleware::Error> for Error {
+    fn from(value: reqwest_middleware::Error) -> Self {
+        match value {
+            reqwest_middleware::Error::Middleware(x) => Error::Middleware(x),
+            reqwest_middleware::Error::Reqwest(x) => Error::Reqwest(x),
+        }
     }
 }
 
@@ -61,25 +89,38 @@ impl Client {
     pub fn request<U: IntoUrl>(&self, method: Method, url: U) -> RequestBuilder {
         match self {
             Client::Vanilla(c) => RequestBuilder::Vanilla(c.request(method, url)),
+            #[cfg(feature = "middleware")]
             Client::Middleware(c) => RequestBuilder::Middleware(c.request(method, url)),
         }
     }
 
     /// See [`VanillaClient::execute`]
-    pub async fn execute(&self, req: Request) -> Result<Response> {
-        let mut ext = Extensions::new();
-        self.execute_with_extensions(req, &mut ext).await
+    pub async fn execute(&self, req: Request) -> Result<Response, Error> {
+        match self {
+            Client::Vanilla(c) => c.execute(req).await.map_err(Into::into),
+            #[cfg(feature = "middleware")]
+            Client::Middleware(c) => {
+                let mut ext = Extensions::new();
+                c.execute_with_extensions(req, &mut ext)
+                    .await
+                    .map_err(Into::into)
+            }
+        }
     }
 
     /// Executes a request with initial [`Extensions`] if a MiddlewareClient.
+    #[cfg(feature = "middleware")]
     pub async fn execute_with_extensions(
         &self,
         req: Request,
         ext: &mut Extensions,
-    ) -> Result<Response> {
+    ) -> Result<Response, Error> {
         match self {
             Client::Vanilla(c) => c.execute(req).await.map_err(Into::into),
-            Client::Middleware(c) => c.execute_with_extensions(req, ext).await,
+            Client::Middleware(c) => c
+                .execute_with_extensions(req, ext)
+                .await
+                .map_err(Into::into),
         }
     }
 }
@@ -89,22 +130,8 @@ impl Client {
 #[derive(Debug)]
 pub enum RequestBuilder {
     Vanilla(reqwest::RequestBuilder),
+    #[cfg(feature = "middleware")]
     Middleware(reqwest_middleware::RequestBuilder),
-}
-
-impl RequestBuilder {
-    fn map(
-        self,
-        map_vanilla: impl FnOnce(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
-        map_middleware: impl FnOnce(
-            reqwest_middleware::RequestBuilder,
-        ) -> reqwest_middleware::RequestBuilder,
-    ) -> Self {
-        match self {
-            Self::Vanilla(c) => Self::Vanilla(map_vanilla(c)),
-            Self::Middleware(c) => Self::Middleware(map_middleware(c)),
-        }
-    }
 }
 
 impl RequestBuilder {
@@ -117,6 +144,7 @@ impl RequestBuilder {
     {
         match self {
             RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.header(key, value)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.header(key, value)),
         }
     }
@@ -124,13 +152,18 @@ impl RequestBuilder {
     pub fn headers(self, headers: HeaderMap) -> Self {
         match self {
             RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.headers(headers)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.headers(headers)),
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn version(self, version: reqwest::Version) -> Self {
-        self.map(|c| c.version(version), |c| c.version(version))
+        match self {
+            RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.version(version)),
+            #[cfg(feature = "middleware")]
+            RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.version(version)),
+        }
     }
 
     pub fn basic_auth<U, P>(self, username: U, password: Option<P>) -> Self
@@ -140,6 +173,7 @@ impl RequestBuilder {
     {
         match self {
             RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.basic_auth(username, password)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => {
                 RequestBuilder::Middleware(c.basic_auth(username, password))
             }
@@ -152,6 +186,7 @@ impl RequestBuilder {
     {
         match self {
             RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.bearer_auth(token)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.bearer_auth(token)),
         }
     }
@@ -159,42 +194,64 @@ impl RequestBuilder {
     pub fn body<T: Into<Body>>(self, body: T) -> Self {
         match self {
             RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.body(body)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.body(body)),
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
     pub fn timeout(self, timeout: std::time::Duration) -> Self {
-        self.map(|c| c.timeout(timeout), |c| c.timeout(timeout))
+        match self {
+            RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.timeout(timeout)),
+            #[cfg(feature = "middleware")]
+            RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.timeout(timeout)),
+        }
     }
 
+    #[cfg(feature = "multipart")]
     pub fn multipart(self, multipart: Form) -> Self {
         match self {
             RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.multipart(multipart)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.multipart(multipart)),
         }
     }
 
     pub fn query<T: Serialize + ?Sized>(self, query: &T) -> Self {
-        self.map(|c| c.query(query), |c| c.query(query))
+        match self {
+            RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.query(query)),
+            #[cfg(feature = "middleware")]
+            RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.query(query)),
+        }
     }
 
     pub fn form<T: Serialize + ?Sized>(self, form: &T) -> Self {
-        self.map(|c| c.form(form), |c| c.form(form))
+        match self {
+            RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.form(form)),
+            #[cfg(feature = "middleware")]
+            RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.form(form)),
+        }
     }
 
+    #[cfg(feature = "json")]
     pub fn json<T: Serialize + ?Sized>(self, json: &T) -> Self {
-        self.map(|c| c.json(json), |c| c.json(json))
+        match self {
+            RequestBuilder::Vanilla(c) => RequestBuilder::Vanilla(c.json(json)),
+            #[cfg(feature = "middleware")]
+            RequestBuilder::Middleware(c) => RequestBuilder::Middleware(c.json(json)),
+        }
     }
 
     pub fn build(self) -> reqwest::Result<Request> {
         match self {
             RequestBuilder::Vanilla(c) => c.build(),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => c.build(),
         }
     }
 
     /// Inserts the extension into this request builder (if middleware)
+    #[cfg(feature = "middleware")]
     pub fn with_extension<T: Send + Sync + 'static>(self, extension: T) -> Self {
         match self {
             RequestBuilder::Middleware(c) => {
@@ -205,6 +262,7 @@ impl RequestBuilder {
     }
 
     /// Returns a mutable reference to the internal set of extensions for this request, or panics if not middleware
+    #[cfg(feature = "middleware")]
     pub fn extensions(&mut self) -> &mut Extensions {
         match self {
             RequestBuilder::Vanilla(_) => panic!("attempted to get extensions of vanilla client"),
@@ -212,10 +270,11 @@ impl RequestBuilder {
         }
     }
 
-    pub async fn send(self) -> Result<Response> {
+    pub async fn send(self) -> Result<Response, Error> {
         match self {
             RequestBuilder::Vanilla(c) => c.send().await.map_err(Into::into),
-            RequestBuilder::Middleware(c) => c.send().await,
+            #[cfg(feature = "middleware")]
+            RequestBuilder::Middleware(c) => c.send().await.map_err(Into::into),
         }
     }
 
@@ -229,6 +288,7 @@ impl RequestBuilder {
     pub fn try_clone(&self) -> Option<Self> {
         match self {
             RequestBuilder::Vanilla(c) => Some(RequestBuilder::Vanilla(c.try_clone()?)),
+            #[cfg(feature = "middleware")]
             RequestBuilder::Middleware(c) => Some(RequestBuilder::Middleware(c.try_clone()?)),
         }
     }
