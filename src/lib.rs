@@ -8,6 +8,8 @@ use std::fmt::Display;
 use thiserror::Error;
 
 #[cfg(feature = "middleware")]
+pub use anyhow::Error as MiddlewareError;
+#[cfg(feature = "middleware")]
 pub use reqwest_middleware::ClientWithMiddleware as MiddlewareClient;
 #[cfg(feature = "middleware")]
 use task_local_extensions::Extensions;
