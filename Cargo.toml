@@ -9,7 +9,7 @@ description = "Wrapper over reqwest and reqwest-middleware to provide compatibil
 keywords = [ "reqwest", "http", "middleware" ]
 
 [dependencies]
-reqwest = { version = "0.11.4" }
+reqwest = { version = "0.11.4", default-features = false }
 serde = "1.0"
 http = "0.2"
 thiserror = "1.0"
