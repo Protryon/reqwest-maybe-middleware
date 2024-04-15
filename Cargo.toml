@@ -9,13 +9,13 @@ description = "Wrapper over reqwest and reqwest-middleware to provide compatibil
 keywords = [ "reqwest", "http", "middleware" ]
 
 [dependencies]
-reqwest = { version = "0.11.4", default-features = false }
+reqwest = { version = "0.12", default-features = false }
 serde = "1.0"
 http = "0.2"
 thiserror = "1.0"
 
 task-local-extensions = { version = "0.1.4", optional = true }
-reqwest-middleware = { version = "0.2.2", optional = true }
+reqwest-middleware = { version = "0.3", optional = true }
 anyhow = { version = "1.0", optional = true }
 
 [features]
