@@ -1,6 +1,6 @@
 [package]
 name = "reqwest-maybe-middleware"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 authors = ["Protryon <max.bruce12@gmail.com>"]
 license = "Apache-2.0 OR MIT"
@@ -11,7 +11,7 @@ keywords = [ "reqwest", "http", "middleware" ]
 [dependencies]
 reqwest = { version = "0.12", default-features = false }
 serde = "1.0"
-http = "0.2"
+http = "1.0"
 thiserror = "1.0"
 
 task-local-extensions = { version = "0.1.4", optional = true }
