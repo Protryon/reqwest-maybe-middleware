@@ -11,8 +11,6 @@ use thiserror::Error;
 pub use anyhow::Error as MiddlewareError;
 #[cfg(feature = "middleware")]
 pub use reqwest_middleware::ClientWithMiddleware as MiddlewareClient;
-#[cfg(feature = "middleware")]
-pub use task_local_extensions::Extensions;
 
 /// Wrapper over reqwest::Client or reqwest_middleware::ClientWithMiddleware
 #[derive(Clone, Debug)]
@@ -102,7 +100,7 @@ impl Client {
             Client::Vanilla(c) => c.execute(req).await.map_err(Into::into),
             #[cfg(feature = "middleware")]
             Client::Middleware(c) => {
-                let mut ext = Extensions::new();
+                let mut ext = http::Extensions::new();
                 c.execute_with_extensions(req, &mut ext)
                     .await
                     .map_err(Into::into)
@@ -115,7 +113,7 @@ impl Client {
     pub async fn execute_with_extensions(
         &self,
         req: Request,
-        ext: &mut Extensions,
+        ext: &mut http::Extensions,
     ) -> Result<Response, Error> {
         match self {
             Client::Vanilla(c) => c.execute(req).await.map_err(Into::into),
@@ -254,7 +252,7 @@ impl RequestBuilder {
 
     /// Inserts the extension into this request builder (if middleware)
     #[cfg(feature = "middleware")]
-    pub fn with_extension<T: Send + Sync + 'static>(self, extension: T) -> Self {
+    pub fn with_extension<T: Clone + Send + Sync + 'static>(self, extension: T) -> Self {
         match self {
             RequestBuilder::Middleware(c) => {
                 RequestBuilder::Middleware(c.with_extension(extension))
@@ -265,7 +263,7 @@ impl RequestBuilder {
 
     /// Returns a mutable reference to the internal set of extensions for this request, or panics if not middleware
     #[cfg(feature = "middleware")]
-    pub fn extensions(&mut self) -> &mut Extensions {
+    pub fn extensions(&mut self) -> &mut http::Extensions {
         match self {
             RequestBuilder::Vanilla(_) => panic!("attempted to get extensions of vanilla client"),
             RequestBuilder::Middleware(c) => c.extensions(),
